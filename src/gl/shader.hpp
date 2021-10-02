@@ -150,6 +150,11 @@ struct program {
 		glUniform2iv(loc, 1, glm::value_ptr(val));
 	}
 
+	void set_uniform(const std::string &name, glm::vec2 val) {
+		auto loc = glGetUniformLocation(id_, name.c_str());
+		glUniform2fv(loc, 1, glm::value_ptr(val));
+	}
+
 	void set_uniform(const std::string &name, int val) {
 		auto loc = glGetUniformLocation(id_, name.c_str());
 		glUniform1i(loc, val);

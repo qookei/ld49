@@ -36,8 +36,8 @@ private:
 };
 
 struct text {
-	text(font *font)
-	: font_{font} {}
+	text(gl::program &prog, font &font)
+	: font_{&font}, mesh_{&prog} {}
 
 	void set_text(std::string_view str) {
 		n_chars_ = 0;
@@ -92,8 +92,12 @@ struct text {
 	}
 
 	void render() {
+		font_->atlas_.bind();
+		mesh_.program()->set_uniform("pos", glm::vec2{x, y});
 		mesh_.render(n_chars_ * 6);
 	}
+
+	int x = 0, y = 0;
 
 private:
 	font *font_;

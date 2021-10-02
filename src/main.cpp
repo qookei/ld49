@@ -2,60 +2,59 @@
 #include <iostream>
 
 #include <glm/glm.hpp>
-//#include <glm/ext/matrix_clip_space.hpp>
 
 #include <gl/shader.hpp>
 #include <gl/mesh.hpp>
 #include <gl/texture.hpp>
 
+#include <sprite.hpp>
 #include <text.hpp>
+#include <time.hpp>
 
 struct scene {
-	scene()
-	: fnt_{"res/font.txt"}, prog_{
-		gl::shader{GL_VERTEX_SHADER, "res/shaders/generic-vertex.glsl"},
-		gl::shader{GL_FRAGMENT_SHADER, "res/shaders/generic-fragment.glsl"}
-	} {
-		gl::vertex vtx[] = {
-			{{0, 0}, {0, 0}, {1, 1, 1, 1}},
-			{{128, 0}, {1, 0}, {1, 1, 1, 1}},
-			{{128, 256}, {1, 1}, {1, 1, 1, 1}},
-
-			{{0, 0}, {0, 0}, {1, 1, 1, 1}},
-			{{128, 256}, {1, 1}, {1, 1, 1, 1}},
-			{{0, 256}, {0, 1}, {1, 1, 1, 1}}
-		};
-		mesh_.vbo().store_regenerate(vtx, sizeof(vtx), GL_STATIC_DRAW);
-		tex_.load("res/font.png");
-	}
-
 	void tick(double delta, const input_state &input) {
+		time_tracker_.tick(delta);
+
+		if (al.expired()) {
+			i = (i + 1) % 4;
+			s_.set_frame(i);
+			al.rearm();
+		}
 	}
 
 	void render() {
-		text t{&fnt_};
-		t.set_text("hello world!\nthis is a test\nthe quick brown fox jumps over the lazy dog\nTHE QUICK BROWN FOX JUMPS OVER THE LAZY DOG");
-		prog_.use();
 		prog_.set_uniform("ortho", ortho);
-		mesh_.render();
+
+		text t{prog_, fnt_};
+		t.set_text("hello world!\nthis is a test\nthe quick brown fox jumps over the lazy dog\nTHE QUICK BROWN FOX JUMPS OVER THE LAZY DOG");
 		t.render();
+
+		s_.render();
 	}
 
 private:
-	font fnt_;
+	gl::program prog_{
+		gl::shader{GL_VERTEX_SHADER, "res/shaders/generic-vertex.glsl"},
+		gl::shader{GL_FRAGMENT_SHADER, "res/shaders/generic-fragment.glsl"}
+	};
 
-	gl::texture2d tex_;
-	gl::mesh mesh_;
-	gl::program prog_;
+	font fnt_{"res/font.txt"};
+
+	sprite s_{prog_, "res/test.png", 16, 16};
+	int i = 0;
+
+	time_tracker time_tracker_;
+	alarm &al = time_tracker_.add_alarm(0.5);
 
 	glm::mat4 ortho = glm::ortho(0.f, static_cast<float>(window::width),
 			static_cast<float>(window::height), 0.f);
 };
 
 int main() {
-	std::cout << "Hello world!\n";
-
 	window wnd;
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	scene s_{};
 
