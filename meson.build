@@ -15,6 +15,8 @@ resources = files(
 	'res/shaders/generic-vertex.glsl',
 	'res/shaders/generic-fragment.glsl',
 	'res/test.png',
+	'res/font.png',
+	'res/font.txt',
 )
 
 deps = []

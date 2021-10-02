@@ -72,6 +72,14 @@ struct texture2d {
 		}
 	}
 
+	int width() const {
+		return surf_->w;
+	}
+
+	int height() const {
+		return surf_->h;
+	}
+
 private:
 	GLuint id_;
 
