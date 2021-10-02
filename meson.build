@@ -14,13 +14,13 @@ sources = files(
 resources = files(
 	'res/shaders/generic-vertex.glsl',
 	'res/shaders/generic-fragment.glsl',
-	'res/test.png',
 	'res/font.png',
 	'res/font.txt',
 	'res/cloud.png',
 	'res/blocks.png',
 	'res/bg.png',
 	'res/particle.png',
+	'res/player.png',
 )
 
 deps = []

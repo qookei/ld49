@@ -73,22 +73,22 @@ public:
 		std::uniform_real_distribution<double> y_dist{-1, -4};
 		std::uniform_real_distribution<double> x_dist{0, 3};
 		std::uniform_int_distribution<int> dist{0, 1};
-		parts_.push_back({x, y, x_dist(global_mt), y_dist(global_mt), dist(global_mt) ? 1 : -1});
+		parts_.push_back({x, y, x_dist(global_mt) * 50, y_dist(global_mt) * 50, dist(global_mt) * 200 ? 1 : -1});
 	}
 
 	void tick(double delta) {
 		for (auto it = parts_.begin(); it != parts_.end();) {
 			auto &p = *it;
 
-			p.x += p.xvel * p.xdir;
+			p.x += p.xvel * p.xdir * delta;
 
 			if (p.xvel > 0)
-				p.xvel -= delta * 20;
+				p.xvel -= 20;
 			else
 				p.xvel = 0;
 
-			p.y += p.yvel;
-			p.yvel += delta * 90;
+			p.y += p.yvel * delta;
+			p.yvel += 90;
 
 			if (p.y >= window::height)
 				it = parts_.erase(it);
@@ -142,8 +142,8 @@ private:
 					}
 					break;
 				case state::falling:
-					y += yvel;
-					yvel += delta * 40;
+					y += yvel * delta;
+					yvel += 10;
 					if (y >= window::height)
 						should_be_removed_ = true;
 					break;
@@ -167,6 +167,13 @@ private:
 		enum class state {
 			solid, shaking, falling
 		} state_ = state::solid;
+
+		bool check_collision(double ox, double oy, double ow, double oh) {
+			return !(ox > (x + 8)
+				|| (ox + ow) < x
+				|| (oy + oh) < y
+				|| oy > (y + 8));
+		}
 
 		sprite spr_;
 		particles &part_;
@@ -194,8 +201,8 @@ public:
 		while (true) {
 			auto len = l_dist_(global_mt);
 
-			std::uniform_int_distribution<int> x_dist_{2, window::width / 8 - len};
-			std::uniform_int_distribution<int> y_dist_{2, window::width / 24 - 3};
+			std::uniform_int_distribution<int> x_dist_{2, window::width / 8 - len - 1};
+			std::uniform_int_distribution<int> y_dist_{10, window::height / 24 - 3};
 			int xx = x_dist_(global_mt);
 			int yy = x_dist_(global_mt);
 
@@ -225,12 +232,98 @@ public:
 			bl.render();
 	}
 
+	bool check_collision(double x, double y, double w, double h) {
+		for (auto &[_, bl] : blocks_) {
+			if (bl.check_collision(x, y, w, h))
+				return true;
+		}
+
+		return false;
+	}
+
 private:
 	gl::program &prog_;
 	particles &part_;
 	std::unordered_map<glm::ivec2, block> blocks_;
 	std::uniform_int_distribution<int> l_dist_{2, 8};
 	std::uniform_int_distribution<int> f_dist_{0, 23};
+};
+
+struct player {
+	player(blocks &blocks, gl::program &prog)
+	: blocks_{blocks}, spr_{prog, "res/player.png", 8, 8} { }
+
+public:
+	void tick(double delta, input_state &input) {
+		if (input.down_keys[SDLK_LEFT]) {
+			xdir = -1;
+			xvel = 100;
+		}
+
+		if (input.down_keys[SDLK_RIGHT]) {
+			xdir = 1;
+			xvel = 100;
+		}
+
+		if (input.just_pressed_keys.contains(SDLK_UP) && jump_ctr) {
+			yvel = -200;
+			jump_ctr--;
+		}
+
+		if (!input.down_keys[SDLK_LEFT] && !input.down_keys[SDLK_RIGHT]) {
+			xdir = 0;
+		}
+
+		constexpr double steps = 200;
+		for (int i = 0; i < steps; i++) {
+			auto newx = x + (xvel * xdir * delta) / steps;
+			auto newy = y + (yvel * delta) / steps;
+
+			if (!blocks_.check_collision(newx, y, 8, 8)) {
+				x = newx;
+			} else {
+				xvel = 0;
+			}
+
+			if (!blocks_.check_collision(x, newy, 8, 8)) {
+				y = newy;
+			} else {
+				if (yvel > 0)
+					jump_ctr = 2;
+				yvel = 0;
+			}
+		}
+
+		x += xvel * xdir * delta;
+		y += yvel * delta;
+
+		if (xvel > 0)
+			xvel -= 10;
+		else
+			xvel = 0;
+
+		yvel += 10;
+
+		if (y >= (window::height - 8)) {
+			y = window::height - 8;
+			yvel = 0;
+			jump_ctr = 2;
+		}
+	}
+
+	void render() {
+		spr_.x = x;
+		spr_.y = y;
+		spr_.render();
+	}
+
+private:
+	blocks &blocks_;
+	sprite spr_;
+	double x = 0, y = 0;
+	double xvel = 0, yvel = 0;
+	int xdir = 0;
+	int jump_ctr = 2;
 };
 
 struct scene {
@@ -243,6 +336,7 @@ struct scene {
 
 		blocks_.tick(delta);
 		particles_.tick(delta);
+		player_.tick(delta, input);
 	}
 
 	void render() {
@@ -253,6 +347,7 @@ struct scene {
 		bg_.render();
 
 		blocks_.render();
+		player_.render();
 		particles_.render();
 
 		//text t{prog_, fnt_};
@@ -277,6 +372,8 @@ private:
 	particles particles_{prog_};
 	blocks blocks_{prog_, particles_};
 
+	player player_{blocks_, prog_};
+
 	sprite bg_{prog_, "res/bg.png", 160, 120};
 
 	glm::mat4 ortho = glm::ortho(0.f, static_cast<float>(window::width),
@@ -293,7 +390,6 @@ int main() {
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	scene s_{};
-
 
 	wnd.attach_ticker(s_);
 	wnd.attach_renderer(s_);
