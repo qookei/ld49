@@ -39,9 +39,15 @@ struct time_tracker {
 	void tick(double delta) {
 		for (auto &[_, alarm] : alarms_)
 			alarm.tick(delta);
+		elapsed_ += delta;
+	}
+
+	double now() const {
+		return elapsed_;
 	}
 
 private:
 	uint64_t id_ = 0;
 	std::map<uint64_t, alarm> alarms_;
+	double elapsed_ = 0;
 };

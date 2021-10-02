@@ -25,7 +25,7 @@ struct sprite {
 
 	void render() {
 		tex_.bind();
-		mesh_.program()->set_uniform("pos", glm::vec2{x, y});
+		mesh_.program()->set_uniform("obj_pos", glm::vec2{x, y});
 		mesh_.render();
 	}
 

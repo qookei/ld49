@@ -9,6 +9,8 @@
 #include <cmath>
 #include <iostream>
 
+// #define LOG_SCALE
+
 struct input_state {
 	int mouse_x, mouse_y;
 	std::map<SDL_Keycode, bool> down_keys;
@@ -16,8 +18,8 @@ struct input_state {
 };
 
 struct window {
-	static constexpr int width = 320;
-	static constexpr int height = 240;
+	static constexpr int width = 160;
+	static constexpr int height = 120;
 
 	window() {
 		SDL_Init(SDL_INIT_VIDEO);
@@ -38,9 +40,11 @@ struct window {
 			scale_ = 1;
 		}
 
+#ifdef LOG_SCALE
 		std::cout << "Computed scale is " << scale_
 			<< " (viewport: " << width << "x" << height << ")"
 			<< " (client: " << client_width << "x" << client_height << ")\n";
+#endif
 
 		wnd_ = SDL_CreateWindow("LD49", SDL_WINDOWPOS_CENTERED,
 				SDL_WINDOWPOS_CENTERED,
@@ -63,9 +67,11 @@ struct window {
 				wnd->scale_ = 1;
 			}
 
+#ifdef LOG_SCALE
 			std::cout << "Computed scale is " << wnd->scale_
 				<< " (viewport: " << width << "x" << height << ")"
 				<< " (client: " << client_width << "x" << client_height << ")\n";
+#endif
 
 			SDL_SetWindowSize(wnd->wnd_, width * wnd->scale_, height * wnd->scale_);
 			glViewport(0, 0, width * wnd->scale_, height * wnd->scale_);
