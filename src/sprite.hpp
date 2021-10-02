@@ -6,8 +6,8 @@
 #include <gl/shader.hpp>
 
 struct sprite {
-	sprite(gl::program &prog, const std::string &texture, int w, int h)
-	: mesh_{&prog}, w_{w}, h_{h} {
+	sprite(gl::program &prog, const std::string &texture, int w, int h, int f = 0)
+	: mesh_{&prog}, w_{w}, h_{h}, frame_{f} {
 		tex_.load(texture);
 
 		vtx_ = std::array<gl::vertex, 6>{
@@ -62,5 +62,5 @@ private:
 	gl::mesh mesh_;
 
 	int w_, h_;
-	int frame_ = 0;
+	int frame_;
 };

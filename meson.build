@@ -17,6 +17,10 @@ resources = files(
 	'res/test.png',
 	'res/font.png',
 	'res/font.txt',
+	'res/cloud.png',
+	'res/blocks.png',
+	'res/bg.png',
+	'res/particle.png',
 )
 
 deps = []

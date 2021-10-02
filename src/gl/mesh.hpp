@@ -9,6 +9,7 @@ namespace gl {
 struct mesh {
 	friend void swap(mesh &a, mesh &b) {
 		using std::swap;
+		swap(a.prog_, b.prog_);
 		swap(a.vbo_, b.vbo_);
 	}
 

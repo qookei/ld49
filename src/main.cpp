@@ -1,7 +1,9 @@
 #include <window.hpp>
 #include <iostream>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <gl/shader.hpp>
 #include <gl/mesh.hpp>
@@ -52,13 +54,195 @@ private:
 	sprite spr_;
 	alarm &alarm_;
 	std::uniform_int_distribution<int> x_dist_{0, window::width};
-	std::uniform_int_distribution<int> y_dist_{0, window::height - 32};
+	std::uniform_int_distribution<int> y_dist_{0, window::height - 16};
+};
+
+struct particles {
+	particles(gl::program &prog)
+	: spr_{prog, "res/particle.png", 2, 2} { }
+
+private:
+	struct particle {
+		double x, y;
+		double xvel, yvel;
+		int xdir;
+	};
+
+public:
+	void add_particle(double x, double y) {
+		std::uniform_real_distribution<double> y_dist{-1, -4};
+		std::uniform_real_distribution<double> x_dist{0, 3};
+		std::uniform_int_distribution<int> dist{0, 1};
+		parts_.push_back({x, y, x_dist(global_mt), y_dist(global_mt), dist(global_mt) ? 1 : -1});
+	}
+
+	void tick(double delta) {
+		for (auto it = parts_.begin(); it != parts_.end();) {
+			auto &p = *it;
+
+			p.x += p.xvel * p.xdir;
+
+			if (p.xvel > 0)
+				p.xvel -= delta * 20;
+			else
+				p.xvel = 0;
+
+			p.y += p.yvel;
+			p.yvel += delta * 90;
+
+			if (p.y >= window::height)
+				it = parts_.erase(it);
+			else
+				++it;
+		}
+	}
+
+	void render() {
+		for (auto &p : parts_) {
+			spr_.x = p.x;
+			spr_.y = p.y;
+			spr_.render();
+		}
+	}
+
+private:
+	sprite spr_;
+
+	std::vector<particle> parts_;
+};
+
+struct blocks {
+	blocks(gl::program &prog, particles &part)
+	: prog_{prog}, part_{part} { }
+
+private:
+	struct block {
+		block(gl::program &prog, particles &part, int frame)
+		: spr_{prog, "res/blocks.png", 8, 8, frame}, part_{part} {
+			std::uniform_real_distribution<double> dist{8., 16.};
+			time_left_ = dist(global_mt);
+		}
+
+		void tick(double delta) {
+			switch (state_) {
+				case state::solid:
+					time_left_ -= delta;
+					if (time_left_ <= 0)
+						state_ = state::shaking;
+					break;
+				case state::shaking:
+					time_shake_ -= delta;
+					if (time_shake_ <= 0)
+						state_ = state::falling;
+					time_particle_ -= delta;
+					if (time_particle_ <= 0) {
+						for (int i = 0; i < 8; i++)
+							part_.add_particle(x + 4, y + 8);
+						time_particle_ = 0.05;
+					}
+					break;
+				case state::falling:
+					y += yvel;
+					yvel += delta * 40;
+					if (y >= window::height)
+						should_be_removed_ = true;
+					break;
+			}
+		}
+
+		void render() {
+			int offx = 0, offy = 0;
+
+			if (state_ == state::shaking) {
+				std::uniform_int_distribution<int> dist{-1, 1};
+				offx = dist(global_mt);
+				offy = dist(global_mt);
+			}
+
+			spr_.x = x + offx;
+			spr_.y = y + offy;
+			spr_.render();
+		}
+
+		enum class state {
+			solid, shaking, falling
+		} state_ = state::solid;
+
+		sprite spr_;
+		particles &part_;
+		double time_left_;
+		double time_shake_ = 0.2;
+		double time_particle_ = 0;
+		bool should_be_removed_ = false;
+		double x = 0, y = 0;
+		double yvel = 0;
+	};
+
+public:
+	void tick(double delta) {
+		for (auto it = blocks_.begin(); it != blocks_.end();) {
+			auto &[_, bl] = *it;
+			bl.tick(delta);
+			if (bl.should_be_removed_)
+				it = blocks_.erase(it);
+			else
+				++it;
+		}
+	}
+
+	void add_platform() {
+		while (true) {
+			auto len = l_dist_(global_mt);
+
+			std::uniform_int_distribution<int> x_dist_{2, window::width / 8 - len};
+			std::uniform_int_distribution<int> y_dist_{2, window::width / 24 - 3};
+			int xx = x_dist_(global_mt);
+			int yy = x_dist_(global_mt);
+
+			bool ok = true;
+			for (int i = 0; i < len; i++) {
+				if (blocks_.contains(glm::ivec2{xx + i, yy})) {
+					ok = false;
+					break;
+				}
+			}
+
+			if (!ok) continue;
+
+			for (int i = 0; i < len; i++) {
+				block b{prog_, part_, f_dist_(global_mt)};
+				b.x = (xx + i) * 8;
+				b.y = yy * 8;
+				blocks_.emplace(glm::ivec2{xx + i, yy}, std::move(b));
+			}
+
+			break;
+		}
+	}
+
+	void render() {
+		for (auto &[_, bl] : blocks_)
+			bl.render();
+	}
+
+private:
+	gl::program &prog_;
+	particles &part_;
+	std::unordered_map<glm::ivec2, block> blocks_;
+	std::uniform_int_distribution<int> l_dist_{2, 8};
+	std::uniform_int_distribution<int> f_dist_{0, 23};
 };
 
 struct scene {
-	void tick(double delta, const input_state &input) {
+	void tick(double delta, input_state &input) {
 		time_tracker_.tick(delta);
 		clouds_.tick();
+
+		if (input.just_pressed_keys.contains(SDLK_SPACE))
+			blocks_.add_platform();
+
+		blocks_.tick(delta);
+		particles_.tick(delta);
 	}
 
 	void render() {
@@ -66,9 +250,16 @@ struct scene {
 
 		clouds_.render();
 
-		text t{prog_, fnt_};
-		t.set_text("hello world!\nthis is a test\nthe quick brown fox jumps over the lazy dog\nTHE QUICK BROWN FOX JUMPS OVER THE LAZY DOG");
-		t.render();
+		bg_.render();
+
+		blocks_.render();
+		particles_.render();
+
+		//text t{prog_, fnt_};
+		//t.x = 38;
+		//t.y = 72;
+		//t.set_text(" hello world!\nthis is a test");
+		//t.render();
 	}
 
 private:
@@ -81,7 +272,12 @@ private:
 
 	time_tracker time_tracker_;
 
-	clouds<16> clouds_{prog_, time_tracker_};
+	clouds<20> clouds_{prog_, time_tracker_};
+
+	particles particles_{prog_};
+	blocks blocks_{prog_, particles_};
+
+	sprite bg_{prog_, "res/bg.png", 160, 120};
 
 	glm::mat4 ortho = glm::ortho(0.f, static_cast<float>(window::width),
 			static_cast<float>(window::height), 0.f);
@@ -97,6 +293,7 @@ int main() {
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	scene s_{};
+
 
 	wnd.attach_ticker(s_);
 	wnd.attach_renderer(s_);

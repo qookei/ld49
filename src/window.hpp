@@ -10,6 +10,8 @@
 #include <iostream>
 
 // #define LOG_SCALE
+//
+inline constexpr bool log_scale = false;
 
 struct input_state {
 	int mouse_x, mouse_y;
@@ -40,11 +42,10 @@ struct window {
 			scale_ = 1;
 		}
 
-#ifdef LOG_SCALE
-		std::cout << "Computed scale is " << scale_
-			<< " (viewport: " << width << "x" << height << ")"
-			<< " (client: " << client_width << "x" << client_height << ")\n";
-#endif
+		if constexpr (log_scale)
+			std::cout << "Computed scale is " << scale_
+				<< " (viewport: " << width << "x" << height << ")"
+				<< " (client: " << client_width << "x" << client_height << ")\n";
 
 		wnd_ = SDL_CreateWindow("LD49", SDL_WINDOWPOS_CENTERED,
 				SDL_WINDOWPOS_CENTERED,
@@ -67,11 +68,10 @@ struct window {
 				wnd->scale_ = 1;
 			}
 
-#ifdef LOG_SCALE
-			std::cout << "Computed scale is " << wnd->scale_
-				<< " (viewport: " << width << "x" << height << ")"
-				<< " (client: " << client_width << "x" << client_height << ")\n";
-#endif
+			if constexpr (log_scale)
+				std::cout << "Computed scale is " << wnd->scale_
+					<< " (viewport: " << width << "x" << height << ")"
+					<< " (client: " << client_width << "x" << client_height << ")\n";
 
 			SDL_SetWindowSize(wnd->wnd_, width * wnd->scale_, height * wnd->scale_);
 			glViewport(0, 0, width * wnd->scale_, height * wnd->scale_);
@@ -83,7 +83,7 @@ struct window {
 	template <typename T>
 	void attach_ticker(T &ticker) {
 		ticker_ctx_ = &ticker;
-		ticker_cb_ = [] (double delta, const input_state &input, void *ctx) {
+		ticker_cb_ = [] (double delta, input_state &input, void *ctx) {
 			static_cast<T *>(ctx)->tick(delta, input);
 		};
 	}
@@ -155,7 +155,7 @@ private:
 	input_state input_{};
 
 	void *ticker_ctx_ = nullptr;
-	void (*ticker_cb_)(double, const input_state &, void *) = nullptr;
+	void (*ticker_cb_)(double, input_state &, void *) = nullptr;
 
 	void *renderer_ctx_ = nullptr;
 	void (*renderer_cb_)(void *) = nullptr;

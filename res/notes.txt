@@ -1,1 +1,3 @@
-The font is from the Shinonome font family (public domain) from http://openlab.ring.gr.jp/efont/shinonome/index.html.ja
+Used fonts, textures and sounds:
+Shinonome font family: from http://openlab.ring.gr.jp/efont/shinonome/index.html.ja
+Square block textures: https://opengameart.org/content/square-block-textures
