@@ -270,10 +270,6 @@ public:
 			jump_ctr--;
 		}
 
-		if (!input.down_keys[SDLK_LEFT] && !input.down_keys[SDLK_RIGHT]) {
-			xdir = 0;
-		}
-
 		constexpr double steps = 200;
 		for (int i = 0; i < steps; i++) {
 			auto newx = x + (xvel * xdir * delta) / steps;
@@ -297,10 +293,12 @@ public:
 		x += xvel * xdir * delta;
 		y += yvel * delta;
 
-		if (xvel > 0)
+		if (xvel > 0) {
 			xvel -= 10;
-		else
+		} else {
 			xvel = 0;
+			xdir = 0;
+		}
 
 		yvel += 10;
 
