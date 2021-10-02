@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en-us">
+	<head>
+		<meta charset="utf-8">
+		<title>LD49 - Loading</title>
+		<style>
+			html, body {
+				font-family: sans-serif;
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+			}
+
+			#container {
+				width: 100%;
+				text-align: center;
+				margin-top: 1em;
+			}
+
+			kbd {
+				border-radius: 2px;
+				padding: 2px;
+				border: 1px solid black;
+			}
+
+		</style>
+	</head>
+	<body>
+		<div id="container">
+			<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+			<h1>Hi! <kbd>A</kbd></h1>
+		</div>
+
+		<script type='text/javascript'>
+			var Module = {
+				preRun: [],
+				postRun: [],
+				print: console.log,
+				printErr: console.error,
+				canvas: document.querySelector('#canvas'),
+			};
+		</script>
+
+		<script src="build/ld49.js"></script>
+	</body>
+</html>
