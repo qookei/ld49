@@ -256,18 +256,25 @@ struct player {
 public:
 	void tick(double delta, input_state &input) {
 		if (input.down_keys[SDLK_LEFT]) {
+			spr_.set_frame(spr_.get_frame() | 1);
 			xdir = -1;
 			xvel = 130;
 		}
 
 		if (input.down_keys[SDLK_RIGHT]) {
+			spr_.set_frame(spr_.get_frame() & ~1);
 			xdir = 1;
 			xvel = 130;
 		}
 
 		if (input.just_pressed_keys.contains(SDLK_UP) && jump_ctr) {
+			if (xdir == -1)
+				spr_.set_frame(9);
+			if (xdir == 1)
+				spr_.set_frame(8);
 			yvel = -240;
 			jump_ctr--;
+			jump_frame_wait = 10;
 		}
 
 		constexpr double steps = 50;
@@ -277,9 +284,21 @@ public:
 
 			if (!blocks_.check_collision(x, newy, 7, 7)) {
 				y = newy;
+				if ((yvel > 0 || yvel < 0) && !jump_frame_wait) {
+					if (xdir == -1)
+						spr_.set_frame(17);
+					if (xdir == 1)
+						spr_.set_frame(16);
+				}
 			} else {
-				if (yvel > 0)
+				if (yvel > 0) {
 					jump_ctr = 2;
+					if (xdir == -1)
+						spr_.set_frame(1);
+					if (xdir == 1)
+						spr_.set_frame(0);
+					jump_frame_wait = 0;
+				}
 				yvel = 0;
 			}
 
@@ -294,7 +313,6 @@ public:
 			xvel -= 10;
 		} else {
 			xvel = 0;
-			xdir = 0;
 		}
 
 		yvel += 10;
@@ -303,6 +321,12 @@ public:
 			y = window::height - 8;
 			yvel = 0;
 			jump_ctr = 2;
+			if (xdir == -1)
+				spr_.set_frame(1);
+			if (xdir == 1)
+				spr_.set_frame(0);
+			jump_frame_wait = 0;
+
 		}
 	}
 
@@ -310,6 +334,7 @@ public:
 		spr_.x = x;
 		spr_.y = y;
 		spr_.render();
+		if (jump_frame_wait) jump_frame_wait--;
 	}
 
 private:
@@ -319,6 +344,7 @@ private:
 	double xvel = 0, yvel = 0;
 	int xdir = 0;
 	int jump_ctr = 2;
+	int jump_frame_wait = 0;
 };
 
 struct scene {
