@@ -169,7 +169,7 @@ private:
 		} state_ = state::solid;
 
 		bool check_collision(double ox, double oy, double ow, double oh) {
-			return !(ox > (x + 8)
+			return state_ != state::falling && !(ox > (x + 8)
 				|| (ox + ow) < x
 				|| (oy + oh) < y
 				|| oy > (y + 8));
@@ -257,41 +257,38 @@ public:
 	void tick(double delta, input_state &input) {
 		if (input.down_keys[SDLK_LEFT]) {
 			xdir = -1;
-			xvel = 100;
+			xvel = 130;
 		}
 
 		if (input.down_keys[SDLK_RIGHT]) {
 			xdir = 1;
-			xvel = 100;
+			xvel = 130;
 		}
 
 		if (input.just_pressed_keys.contains(SDLK_UP) && jump_ctr) {
-			yvel = -200;
+			yvel = -240;
 			jump_ctr--;
 		}
 
-		constexpr double steps = 200;
+		constexpr double steps = 50;
 		for (int i = 0; i < steps; i++) {
 			auto newx = x + (xvel * xdir * delta) / steps;
 			auto newy = y + (yvel * delta) / steps;
 
-			if (!blocks_.check_collision(newx, y, 8, 8)) {
-				x = newx;
-			} else {
-				xvel = 0;
-			}
-
-			if (!blocks_.check_collision(x, newy, 8, 8)) {
+			if (!blocks_.check_collision(x, newy, 7, 7)) {
 				y = newy;
 			} else {
 				if (yvel > 0)
 					jump_ctr = 2;
 				yvel = 0;
 			}
-		}
 
-		x += xvel * xdir * delta;
-		y += yvel * delta;
+			if (!blocks_.check_collision(newx, y, 7, 7)) {
+				x = newx;
+			} else {
+				xvel = 0;
+			}
+		}
 
 		if (xvel > 0) {
 			xvel -= 10;
