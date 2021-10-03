@@ -74,13 +74,13 @@ struct text {
 
 			int w = x + font_->char_w_, h = y + font_->char_h_;
 
-			verts[i++] = {{x, y}, {tx, ty}, {1, 1, 1, 1}};
-			verts[i++] = {{w, y}, {tw, ty}, {1, 1, 1, 1}};
-			verts[i++] = {{w, h}, {tw, th}, {1, 1, 1, 1}};
+			verts[i++] = {{x, y}, {tx, ty}};
+			verts[i++] = {{w, y}, {tw, ty}};
+			verts[i++] = {{w, h}, {tw, th}};
 
-			verts[i++] = {{x, y}, {tx, ty}, {1, 1, 1, 1}};
-			verts[i++] = {{w, h}, {tw, th}, {1, 1, 1, 1}};
-			verts[i++] = {{x, h}, {tx, th}, {1, 1, 1, 1}};
+			verts[i++] = {{x, y}, {tx, ty}};
+			verts[i++] = {{w, h}, {tw, th}};
+			verts[i++] = {{x, h}, {tx, th}};
 
 			x += font_->char_w_;
 		}
@@ -91,9 +91,10 @@ struct text {
 			mesh_.vbo().store(verts.data(), 0, new_size * sizeof(gl::vertex));
 	}
 
-	void render() {
+	void render(glm::vec4 color) {
 		font_->atlas_.bind();
 		mesh_.program()->set_uniform("obj_pos", glm::vec2{x, y});
+		mesh_.program()->set_uniform("obj_color", color);
 		mesh_.render(n_chars_ * 6);
 	}
 

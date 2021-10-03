@@ -11,21 +11,27 @@ struct sprite {
 		tex_.load(texture);
 
 		vtx_ = std::array<gl::vertex, 6>{
-			gl::vertex{{0, 0}, {0, 0}, {1, 1, 1, 1}},
-			gl::vertex{{w, 0}, {1, 0}, {1, 1, 1, 1}},
-			gl::vertex{{w, h}, {1, 1}, {1, 1, 1, 1}},
+			gl::vertex{{0, 0}, {0, 0}},
+			gl::vertex{{w, 0}, {1, 0}},
+			gl::vertex{{w, h}, {1, 1}},
 
-			gl::vertex{{0, 0}, {0, 0}, {1, 1, 1, 1}},
-			gl::vertex{{w, h}, {1, 1}, {1, 1, 1, 1}},
-			gl::vertex{{0, h}, {0, 1}, {1, 1, 1, 1}}
+			gl::vertex{{0, 0}, {0, 0}},
+			gl::vertex{{w, h}, {1, 1}},
+			gl::vertex{{0, h}, {0, 1}}
 		};
 
 		set_frame(frame_);
 	}
 
+	sprite(const sprite &) = delete;
+	sprite &operator=(const sprite &) = delete;
+	sprite(sprite &&) = default;
+	sprite &operator=(sprite &&) = default;
+
 	void render() {
 		tex_.bind();
 		mesh_.program()->set_uniform("obj_pos", glm::vec2{x, y});
+		mesh_.program()->set_uniform("obj_color", glm::vec4{1, 1, 1, 1});
 		mesh_.render();
 	}
 

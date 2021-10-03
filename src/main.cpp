@@ -57,6 +57,14 @@ private:
 	std::uniform_int_distribution<int> y_dist_{0, window::height - 16};
 };
 
+bool aabb(double x1, double y1, double w1, double h1,
+		double x2, double y2, double w2, double h2) {
+	return !(x1 > (x2 + w2)
+		|| (x1 + w1) < x2
+		|| (y1 + h1) < y2
+		|| y1 > (y2 + h2));
+}
+
 struct particles {
 	particles(gl::program &prog)
 	: spr_{prog, "res/particle.png", 2, 2} { }
@@ -88,7 +96,7 @@ public:
 				p.xvel = 0;
 
 			p.y += p.yvel * delta;
-			p.yvel += 90;
+			p.yvel += 50;
 
 			if (p.y >= window::height)
 				it = parts_.erase(it);
@@ -136,7 +144,7 @@ private:
 						state_ = state::falling;
 					time_particle_ -= delta;
 					if (time_particle_ <= 0) {
-						for (int i = 0; i < 8; i++)
+						for (int i = 0; i < 4; i++)
 							part_.add_particle(x + 4, y + 8);
 						time_particle_ = 0.05;
 					}
@@ -169,10 +177,7 @@ private:
 		} state_ = state::solid;
 
 		bool check_collision(double ox, double oy, double ow, double oh) {
-			return state_ != state::falling && !(ox > (x + 8)
-				|| (ox + ow) < x
-				|| (oy + oh) < y
-				|| oy > (y + 8));
+			return state_ != state::falling && aabb(ox, oy, ow, oh, x, y, 8, 8);
 		}
 
 		sprite spr_;
@@ -197,7 +202,8 @@ public:
 		}
 	}
 
-	void add_platform() {
+	template <typename F>
+	void add_platform(F &&check) {
 		while (true) {
 			auto len = l_dist_(global_mt);
 
@@ -214,16 +220,20 @@ public:
 				}
 			}
 
-			if (!ok) continue;
+			if (!ok || !check(xx, yy, len)) continue;
 
-			for (int i = 0; i < len; i++) {
-				block b{prog_, part_, f_dist_(global_mt)};
-				b.x = (xx + i) * 8;
-				b.y = yy * 8;
-				blocks_.emplace(glm::ivec2{xx + i, yy}, std::move(b));
-			}
+			add_platform_at(xx, yy, len);
 
 			break;
+		}
+	}
+
+	void add_platform_at(int x, int y, int len) {
+		for (int i = 0; i < len; i++) {
+			block b{prog_, part_, f_dist_(global_mt)};
+			b.x = (x + i) * 8;
+			b.y = y * 8;
+			blocks_.emplace(glm::ivec2{x + i, y}, std::move(b));
 		}
 	}
 
@@ -241,6 +251,15 @@ public:
 		return false;
 	}
 
+	bool block_at(int x, int y) {
+		return blocks_.contains(glm::ivec2{x, y});
+	}
+
+	bool solid_at(int x, int y) {
+		return blocks_.contains(glm::ivec2{x, y})
+			&& blocks_.at({x, y}).state_ != block::state::falling;
+	}
+
 private:
 	gl::program &prog_;
 	particles &part_;
@@ -249,29 +268,43 @@ private:
 	std::uniform_int_distribution<int> f_dist_{0, 23};
 };
 
-struct player {
-	player(blocks &blocks, gl::program &prog)
-	: blocks_{blocks}, spr_{prog, "res/player.png", 8, 8} { }
+struct movement {
+	bool left;
+	bool right;
+	bool jump;
+};
 
-public:
+struct entity {
+	entity(blocks &blocks, gl::program &prog, int base_frame, double xspeed)
+	: xspeed_{xspeed}, base_frame_{base_frame}, blocks_{blocks},
+		spr_{prog, "res/player.png", 8, 8, base_frame} { }
+
+	virtual ~entity() = default;
+
+	entity(const entity &) = delete;
+	entity(entity &&) = default;
+
+	virtual movement get_current_movement(double delta, input_state &input) = 0;
+
 	void tick(double delta, input_state &input) {
-		if (input.down_keys[SDLK_LEFT]) {
+		auto mov = get_current_movement(delta, input);
+		if (mov.left) {
 			spr_.set_frame(spr_.get_frame() | 1);
 			xdir = -1;
-			xvel = 130;
+			xvel = xspeed_;
 		}
 
-		if (input.down_keys[SDLK_RIGHT]) {
+		if (mov.right) {
 			spr_.set_frame(spr_.get_frame() & ~1);
 			xdir = 1;
-			xvel = 130;
+			xvel = xspeed_;
 		}
 
-		if (input.just_pressed_keys.contains(SDLK_UP) && jump_ctr) {
+		if (mov.jump && jump_ctr) {
 			if (xdir == -1)
-				spr_.set_frame(9);
+				spr_.set_frame(base_frame_ + 9);
 			if (xdir == 1)
-				spr_.set_frame(8);
+				spr_.set_frame(base_frame_ + 8);
 			yvel = -240;
 			jump_ctr--;
 			jump_frame_wait = 10;
@@ -286,17 +319,17 @@ public:
 				y = newy;
 				if ((yvel > 0 || yvel < 0) && !jump_frame_wait) {
 					if (xdir == -1)
-						spr_.set_frame(17);
+						spr_.set_frame(base_frame_ + 17);
 					if (xdir == 1)
-						spr_.set_frame(16);
+						spr_.set_frame(base_frame_ + 16);
 				}
 			} else {
 				if (yvel > 0) {
 					jump_ctr = 2;
 					if (xdir == -1)
-						spr_.set_frame(1);
+						spr_.set_frame(base_frame_ + 1);
 					if (xdir == 1)
-						spr_.set_frame(0);
+						spr_.set_frame(base_frame_ + 0);
 					jump_frame_wait = 0;
 				}
 				yvel = 0;
@@ -316,28 +349,26 @@ public:
 		}
 
 		yvel += 10;
-
-		if (y >= (window::height - 8)) {
-			y = window::height - 8;
-			yvel = 0;
-			jump_ctr = 2;
-			if (xdir == -1)
-				spr_.set_frame(1);
-			if (xdir == 1)
-				spr_.set_frame(0);
-			jump_frame_wait = 0;
-
-		}
 	}
 
 	void render() {
 		spr_.x = x;
 		spr_.y = y;
 		spr_.render();
+
 		if (jump_frame_wait) jump_frame_wait--;
 	}
 
+	double get_x() const { return x; }
+	double get_y() const { return y; }
+
+	void set_position(double x, double y) {
+		this->x = x; this->y = y;
+	}
+
 private:
+	double xspeed_;
+	int base_frame_;
 	blocks &blocks_;
 	sprite spr_;
 	double x = 0, y = 0;
@@ -347,17 +378,175 @@ private:
 	int jump_frame_wait = 0;
 };
 
+struct player : entity {
+	player(blocks &blocks, gl::program &prog)
+	: entity{blocks, prog, 0, 130} { }
+
+	virtual ~player() = default;
+
+	movement get_current_movement(double, input_state &input) override {
+		return {
+			input.down_keys[SDLK_LEFT],
+			input.down_keys[SDLK_RIGHT],
+			input.just_pressed_keys.contains(SDLK_UP)
+		};
+	}
+};
+
+struct enemy : entity {
+	enemy(player &player, blocks &blocks, gl::program &prog)
+	: entity{blocks, prog, 2, 80}, player_{player}, blocks_{blocks} { }
+
+	enemy(const enemy &) = delete;
+	enemy(enemy &&) = default;
+
+	virtual ~enemy() = default;
+
+	movement get_current_movement(double, input_state &) override {
+		if (dir == 1 && blocks_.check_collision(get_x() + 4, get_y(), 7, 7))
+			dir = -dir;
+
+		if (dir == 1 && !blocks_.check_collision(get_x() + 4, get_y() + 4, 7, 7))
+			dir = -dir;
+
+		if (dir == -1 && blocks_.check_collision(get_x() - 4, get_y(), 7, 7))
+			dir = -dir;
+
+		if (dir == -1 && !blocks_.check_collision(get_x() - 4, get_y() + 4, 7, 7))
+			dir = -dir;
+
+		bool left = dir == -1, right = dir == 1;
+		if (!blocks_.check_collision(get_x(), get_y() + 4, 7, 7))
+			left = right = false;
+
+		std::uniform_int_distribution<int> dist{0, 34};
+
+		wants_shoot_ = dist(global_mt) == 2;
+
+		return {left, right, false};
+	}
+
+	bool wants_shoot() {
+		return std::exchange(wants_shoot_, 0);
+	}
+
+	int facing() const {
+		return dir;
+	}
+
+private:
+	player &player_;
+	blocks &blocks_;
+	int dir = 1;
+	bool wants_shoot_ = false;
+};
+
+struct bullets {
+	bullets(blocks &blocks, gl::program &prog)
+	: blocks_{blocks}, spr_{prog, "res/bullet.png", 2, 2} { }
+
+	void tick(double delta) {
+		for (auto it = pos_.begin(); it != pos_.end();) {
+			auto &p = *it;
+			p.x += delta * p.z;
+
+			if (p.x >= window::width || p.x <= -2
+					|| blocks_.check_collision(p.x, p.y, 1, 1))
+				it = pos_.erase(it);
+			else
+				++it;
+		}
+	}
+
+	void add_bullet(double x, double y, double xspeed) {
+		pos_.push_back({x, y, xspeed});
+	}
+
+	void render() {
+		for (auto &p : pos_) {
+			spr_.x = p.x;
+			spr_.y = p.y;
+			spr_.render();
+		}
+	}
+
+private:
+	std::vector<glm::vec3> pos_;
+	blocks &blocks_;
+	sprite spr_;
+};
+
+std::string format_time(double time) {
+	int cs = (int)(time * 10) % 10;
+	int s = (int)(time) % 60;
+	int m = (int)(time / 60);
+
+	std::string out;
+
+	if (m) {
+		out += std::to_string(m) + ":";
+	}
+
+	if (m && s < 10) {
+		out += "0";
+	}
+
+	out += std::to_string(s) + ".";
+	out += std::to_string(cs);
+
+	return out;
+}
+
 struct scene {
+	scene() {
+		player_.set_position(window::width / 2 - 4, window::height / 4);
+		blocks_.add_platform_at((window::width / 8 - 8) / 2, 10, 8);
+	}
+
 	void tick(double delta, input_state &input) {
 		time_tracker_.tick(delta);
 		clouds_.tick();
 
-		if (input.just_pressed_keys.contains(SDLK_SPACE))
-			blocks_.add_platform();
+		std::uniform_int_distribution<int> g_dist{0, 80};
+		std::uniform_int_distribution<int> e_dist{0, 3};
+
+		if (g_dist(global_mt) == 2)
+			blocks_.add_platform(
+			[&] (int x, int y, int len) {
+				if (aabb(player_.get_x(), player_.get_y(), 7, 7,
+						x * 8, y * 8, len * 8, 8))
+					return false;
+
+				for (auto &e : enemies_)
+					if (aabb(e->get_x(), e->get_y(), 7, 7,
+							x * 8, y * 8, len * 8, 8))
+						return false;
+
+				if (e_dist(global_mt) == 0) {
+					if (blocks_.check_collision(x * 8 + len * 4, (y - 1) * 8, 7, 7))
+						return false;
+
+					enemies_.emplace_back(std::make_unique<enemy>(player_, blocks_, prog_));
+					enemies_.back()->set_position(x * 8 + len * 4, (y - 1) * 8);
+				}
+				return true;
+			});
 
 		blocks_.tick(delta);
 		particles_.tick(delta);
+		for (auto it = enemies_.begin(); it != enemies_.end();) {
+			auto &e = **it;
+			e.tick(delta, input);
+			if (e.wants_shoot()) {
+				bullets_.add_bullet(e.get_x() + (e.facing() == 1 ? 8 : -3), e.get_y() + 2, e.facing() * 30);
+			}
+			if (e.get_y() >= window::height)
+				it = enemies_.erase(it);
+			else
+				++it;
+		}
 		player_.tick(delta, input);
+		bullets_.tick(delta);
 	}
 
 	void render() {
@@ -369,13 +558,20 @@ struct scene {
 
 		blocks_.render();
 		player_.render();
+		for (auto &e : enemies_)
+			e->render();
+		bullets_.render();
 		particles_.render();
 
-		//text t{prog_, fnt_};
-		//t.x = 38;
-		//t.y = 72;
-		//t.set_text(" hello world!\nthis is a test");
-		//t.render();
+		text t{prog_, fnt_};
+
+		double elapsed = time_tracker_.now() - start_at_;
+		std::string text = "Time: " + format_time(elapsed);
+
+		t.x = (window::width - text.size() * 6) / 2;
+		t.y = 6;
+		t.set_text(text);
+		t.render({0, 0, 0, 1});
 	}
 
 private:
@@ -394,8 +590,13 @@ private:
 	blocks blocks_{prog_, particles_};
 
 	player player_{blocks_, prog_};
+	std::vector<std::unique_ptr<enemy>> enemies_;
+
+	bullets bullets_{blocks_, prog_};
 
 	sprite bg_{prog_, "res/bg.png", 160, 120};
+
+	double start_at_ = 0;
 
 	glm::mat4 ortho = glm::ortho(0.f, static_cast<float>(window::width),
 			static_cast<float>(window::height), 0.f);

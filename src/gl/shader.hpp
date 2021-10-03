@@ -123,13 +123,10 @@ struct program {
 		glUseProgram(id_);
 		auto pos_attr = attribute_location("pos");
 		auto tex_attr = attribute_location("tex");
-		auto color_attr = attribute_location("color");
 		glVertexAttribPointer(pos_attr, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void *>(offsetof(vertex, pos)));
 		glEnableVertexAttribArray(pos_attr);
 		glVertexAttribPointer(tex_attr, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void *>(offsetof(vertex, tex)));
 		glEnableVertexAttribArray(tex_attr);
-		glVertexAttribPointer(color_attr, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void *>(offsetof(vertex, color)));
-		glEnableVertexAttribArray(color_attr);
 	}
 
 	GLuint id() const {
@@ -153,6 +150,11 @@ struct program {
 	void set_uniform(const std::string &name, glm::vec2 val) {
 		auto loc = glGetUniformLocation(id_, name.c_str());
 		glUniform2fv(loc, 1, glm::value_ptr(val));
+	}
+
+	void set_uniform(const std::string &name, glm::vec4 val) {
+		auto loc = glGetUniformLocation(id_, name.c_str());
+		glUniform4fv(loc, 1, glm::value_ptr(val));
 	}
 
 	void set_uniform(const std::string &name, int val) {
