@@ -1,6 +1,6 @@
 # Ancient Pixels
 
-Ancient Pixels is my entry for Ludum Dare 49 ([https://ldjam.com/events/ludum-dare/49/ancient-pixels](link)).
+Ancient Pixels is my entry for Ludum Dare 49 ([link here](https://ldjam.com/events/ludum-dare/49/ancient-pixels)).
 
 ## Compiling
 
