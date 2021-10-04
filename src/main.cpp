@@ -588,7 +588,112 @@ void render_text_outlined_center(int y, text &t, std::string_view text) {
 	t.render({1, 1, 1, 1});
 }
 
+struct powerups {
+	powerups(gl::program &prog)
+	: spr_{prog, "res/powerups.png", 8, 8} { }
+
+	void tick(double delta, double px, double py) {
+		for (auto it = medi_pos_.begin(); it != medi_pos_.end();) {
+			auto &p = *it;
+			p.y += delta * 30;
+
+			bool hit = false;
+
+			if (aabb(px, py, 7, 7, p.x, p.y, 7, 7)) {
+				hit = true;
+				health_++;
+				Mix_PlayChannel(-1, pickup_sound, 0);
+			}
+
+			if (p.y >= window::height || hit)
+				it = medi_pos_.erase(it);
+			else
+				++it;
+		}
+
+		for (auto it = time_pos_.begin(); it != time_pos_.end();) {
+			auto &p = *it;
+			p.y += delta * 30;
+
+			bool hit = false;
+
+			if (aabb(px, py, 7, 7, p.x, p.y, 7, 7)) {
+				hit = true;
+				time_ = true;
+				Mix_PlayChannel(-1, pickup_sound, 0);
+			}
+
+			if (p.y >= window::height || hit)
+				it = time_pos_.erase(it);
+			else
+				++it;
+		}
+
+		if (time_until_next > 0) {
+			time_until_next -= delta;
+		}
+
+		if (time_until_next <= 0) {
+			time_until_next = 1.5;
+			maybe_add();
+		}
+	}
+
+	void maybe_add() {
+		std::uniform_int_distribution<int> Tdist{0, 109};
+		std::uniform_int_distribution<int> Mdist{0, 59};
+		std::uniform_int_distribution<int> xdist{0, window::width - 8};
+		std::uniform_int_distribution<int> tdist{0, 1};
+
+		if (tdist(global_mt) && !Tdist(global_mt)) {
+			time_pos_.push_back({xdist(global_mt), -8});
+		} else if (!Mdist(global_mt)) {
+			medi_pos_.push_back({xdist(global_mt), -8});
+		}
+	}
+
+	void render() {
+		spr_.set_frame(0);
+		for (auto &p : medi_pos_) {
+			spr_.x = p.x;
+			spr_.y = p.y;
+			spr_.render();
+		}
+
+		spr_.set_frame(1);
+		for (auto &p : time_pos_) {
+			spr_.x = p.x;
+			spr_.y = p.y;
+			spr_.render();
+		}
+	}
+
+	int health() {
+		return std::exchange(health_, 0);
+	}
+
+	bool time() {
+		return std::exchange(time_, false);
+	}
+
+	void clear() {
+		medi_pos_.clear();
+		time_pos_.clear();
+	}
+
+private:
+	std::vector<glm::vec2> medi_pos_;
+	std::vector<glm::vec2> time_pos_;
+	sprite spr_;
+
+	int health_ = 0;
+	bool time_ = false;
+	double time_until_next = 1.5;
+};
+
 struct scene {
+	static constexpr double max_power_up_time = 32;
+
 	void tick(double delta, input_state &input) {
 		time_tracker_.tick(delta);
 		clouds_.tick();
@@ -612,12 +717,15 @@ struct scene {
 		blocks_.clear();
 		particles_.clear();
 		bullets_.clear();
+		powerups_.clear();
 
 		player_.reset_vel();
 		player_.set_position(window::width / 2 - 4, window::height / 4);
 		blocks_.add_platform_at((window::width / 8 - 8) / 2, 10, 8);
 		health = 160;
 		spawn_cooldown = 0.5;
+		power_up_time_ = 0;
+		stuff_speed_ = 1;
 
 		state_ = state::game;
 		start_at_ = time_tracker_.now();
@@ -651,11 +759,11 @@ struct scene {
 		else if (spawn_cooldown > 0)
 			spawn_cooldown -= delta;
 
-		blocks_.tick(delta);
-		particles_.tick(delta);
+		blocks_.tick(delta * stuff_speed_);
+		particles_.tick(delta * stuff_speed_);
 		for (auto it = enemies_.begin(); it != enemies_.end();) {
 			auto &e = **it;
-			e.tick(delta, input);
+			e.tick(delta * stuff_speed_, input);
 			if (e.wants_shoot()) {
 				bullets_.add_bullet(e.get_x() + (e.facing() == 1 ? 8 : -3), e.get_y() + 2, e.facing() * 30);
 			}
@@ -674,13 +782,26 @@ struct scene {
 				++it;
 		}
 		player_.tick(delta, input);
-		bullets_.tick(delta, player_.get_x(), player_.get_y());
+		bullets_.tick(delta * stuff_speed_, player_.get_x(), player_.get_y());
 
 		int hits = bullets_.player_hits();
 		health -= hits * 8;
 
 		if (player_.get_y() >= window::height)
 			health -= 2;
+
+		powerups_.tick(delta * stuff_speed_, player_.get_x(), player_.get_y());
+
+		auto n = powerups_.health();
+		for (int i = 0; i < n; i++) {
+			health += 32;
+			if (health > 160) health = 160;
+		}
+
+		if (powerups_.time()) {
+			power_up_time_ = max_power_up_time;
+			stuff_speed_ = 0.5;
+		}
 
 		if (health < 0) {
 			state_ = state::gameover;
@@ -690,10 +811,18 @@ struct scene {
 
 		if (input.just_pressed_keys.contains(SDLK_ESCAPE))
 			state_ = state::paused;
+
+		if (power_up_time_ > 0) {
+			power_up_time_ -= delta;
+		}
+		if (power_up_time_ <= 0) {
+			power_up_time_ = 0;
+			stuff_speed_ = 1;
+		}
 	}
 
 	void gameover_tick(double, input_state &input) {
-		if (input.just_pressed_keys.size())
+		if (input.just_pressed_keys.contains(SDLK_SPACE))
 			reset_to_game();
 	}
 
@@ -712,14 +841,12 @@ struct scene {
 			case state::mainmenu:
 				mainmenu_render();
 				break;
+			case state::paused:
 			case state::game:
 				game_render();
 				break;
 			case state::gameover:
 				gameover_render();
-				break;
-			case state::paused:
-				paused_render();
 				break;
 		}
 	}
@@ -731,28 +858,25 @@ struct scene {
 			e->render();
 		bullets_.render();
 		particles_.render();
+		powerups_.render();
 
-		double elapsed = time_tracker_.now() - start_at_;
-		std::string text = "Time: " + format_time(elapsed);
-
-		render_text_outlined_center(6, time_text_, text);
-
-		hp_.x = health - 160;
-		hp_.render();
-	}
-
-	void paused_render() {
-		blocks_.render();
-		player_.render();
-		for (auto &e : enemies_)
-			e->render();
-		bullets_.render();
-		particles_.render();
-
-		render_text_outlined_center(6, time_text_, "Paused");
+		if (state_ == state::paused) {
+			render_text_outlined_center(6, time_text_, "Paused");
+		} else {
+			double elapsed = time_tracker_.now() - start_at_;
+			std::string text = "Time: " + format_time(elapsed);
+			render_text_outlined_center(6, time_text_, text);
+		}
 
 		hp_.x = health - 160;
 		hp_.render();
+
+		if (power_up_time_ > 0) {
+			pp_.x = (power_up_time_ - max_power_up_time) * 160.0 / max_power_up_time;
+			pp_.y = window::height - 8;
+			pp_.render();
+		}
+
 	}
 
 	void gameover_render() {
@@ -766,14 +890,14 @@ struct scene {
 		render_text_outlined_center(6, time_text_, "Game over");
 		render_text_outlined_center(18, time_text_, text);
 
-		render_text_outlined_center(80, time_text_, "Press any key");
+		render_text_outlined_center(80, time_text_, "Press Space");
 		render_text_outlined_center(92, time_text_, "to play again");
 	}
 
 	void mainmenu_render() {
-		render_text_outlined_center(22, time_text_, "Game Title Here");
+		render_text_outlined_center(22, time_text_, "Ancient Pixels");
 
-		render_text_outlined_center(80, time_text_, "Press any key");
+		render_text_outlined_center(80, time_text_, "Press Space");
 		render_text_outlined_center(92, time_text_, "to play");
 	}
 
@@ -798,12 +922,18 @@ private:
 
 	bullets bullets_{blocks_, prog_};
 
+	powerups powerups_{prog_};
+
 	sprite bg_{prog_, "res/bg.png", 160, 120};
 	sprite hp_{prog_, "res/healthbar.png", 512, 8};
+	sprite pp_{prog_, "res/powerbar.png", 512, 8};
 	int health = 160;
 
 	double start_at_ = 0;
 	double end_at_ = 0;
+
+	double power_up_time_ = 0;
+	double stuff_speed_ = 1;
 
 	double spawn_cooldown = 0;
 

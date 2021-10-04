@@ -22,6 +22,7 @@ resources = files(
 	'res/particle.png',
 	'res/player.png',
 	'res/healthbar.png',
+	'res/powerbar.png',
 
 	'res/sound/block-fall.wav',
 	'res/sound/gameover.wav',
