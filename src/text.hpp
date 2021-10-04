@@ -85,10 +85,7 @@ struct text {
 			x += font_->char_w_;
 		}
 
-		if (mesh_.vbo().size() < new_size)
-			mesh_.vbo().store_regenerate(verts.data(), new_size * sizeof(gl::vertex), GL_STATIC_DRAW);
-		else
-			mesh_.vbo().store(verts.data(), 0, new_size * sizeof(gl::vertex));
+		mesh_.vbo().upload(verts.data(), new_size * sizeof(gl::vertex), GL_STATIC_DRAW);
 	}
 
 	void render(glm::vec4 color) {

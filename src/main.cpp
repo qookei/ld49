@@ -15,7 +15,11 @@
 
 #include <random>
 
+#include <SDL2/SDL_mixer.h>
+
 std::mt19937 global_mt;
+
+Mix_Chunk *jump_sound, *hit_sound, *blockfall_sound, *gameover_sound, *pickup_sound, *shoot_sound;
 
 template <int N>
 struct clouds {
@@ -113,6 +117,10 @@ public:
 		}
 	}
 
+	void clear() {
+		parts_.clear();
+	}
+
 private:
 	sprite spr_;
 
@@ -126,22 +134,41 @@ struct blocks {
 private:
 	struct block {
 		block(gl::program &prog, particles &part, int frame)
-		: spr_{prog, "res/blocks.png", 8, 8, frame}, part_{part} {
-			std::uniform_real_distribution<double> dist{8., 16.};
+		: spr_{prog, "res/blocks.png", 8, 8, frame}, part_{part}, frame_{frame} {
+			std::uniform_real_distribution<double> dist{8., 12.};
 			time_left_ = dist(global_mt);
 		}
 
 		void tick(double delta) {
 			switch (state_) {
+				case state::popping_in1:
+					spr_.set_frame(frame_ + 24);
+					time_pop_in_1_ -= delta;
+					if (time_pop_in_1_ <= 0)
+						state_ = state::popping_in2;
+					break;
+				case state::popping_in2:
+					spr_.set_frame(frame_ + 48);
+					time_pop_in_2_ -= delta;
+					if (time_pop_in_2_ <= 0)
+						state_ = state::solid;
+					break;
 				case state::solid:
+					spr_.set_frame(frame_);
 					time_left_ -= delta;
 					if (time_left_ <= 0)
 						state_ = state::shaking;
 					break;
-				case state::shaking:
+				case state::shaking: {
+					std::uniform_int_distribution<int> dist{-1, 1};
+					xoff = dist(global_mt);
+					yoff = dist(global_mt);
 					time_shake_ -= delta;
-					if (time_shake_ <= 0)
+					if (time_shake_ <= 0) {
 						state_ = state::falling;
+						Mix_PlayChannel(-1, blockfall_sound, 0);
+						xoff = 0; yoff = 0;
+					}
 					time_particle_ -= delta;
 					if (time_particle_ <= 0) {
 						for (int i = 0; i < 4; i++)
@@ -149,6 +176,7 @@ private:
 						time_particle_ = 0.05;
 					}
 					break;
+				}
 				case state::falling:
 					y += yvel * delta;
 					yvel += 10;
@@ -159,22 +187,14 @@ private:
 		}
 
 		void render() {
-			int offx = 0, offy = 0;
-
-			if (state_ == state::shaking) {
-				std::uniform_int_distribution<int> dist{-1, 1};
-				offx = dist(global_mt);
-				offy = dist(global_mt);
-			}
-
-			spr_.x = x + offx;
-			spr_.y = y + offy;
+			spr_.x = x + xoff;
+			spr_.y = y + yoff;
 			spr_.render();
 		}
 
 		enum class state {
-			solid, shaking, falling
-		} state_ = state::solid;
+			popping_in1, popping_in2, solid, shaking, falling
+		} state_ = state::popping_in1;
 
 		bool check_collision(double ox, double oy, double ow, double oh) {
 			return state_ != state::falling && aabb(ox, oy, ow, oh, x, y, 8, 8);
@@ -182,12 +202,17 @@ private:
 
 		sprite spr_;
 		particles &part_;
+		int frame_;
+
 		double time_left_;
+		double time_pop_in_1_ = 0.04;
+		double time_pop_in_2_ = 0.04;
 		double time_shake_ = 0.2;
 		double time_particle_ = 0;
 		bool should_be_removed_ = false;
 		double x = 0, y = 0;
 		double yvel = 0;
+		int xoff = 0, yoff = 0;
 	};
 
 public:
@@ -204,13 +229,13 @@ public:
 
 	template <typename F>
 	void add_platform(F &&check) {
-		while (true) {
+		for (int tries = 0; tries < 30; tries++) {
 			auto len = l_dist_(global_mt);
 
 			std::uniform_int_distribution<int> x_dist_{2, window::width / 8 - len - 1};
-			std::uniform_int_distribution<int> y_dist_{10, window::height / 24 - 3};
+			std::uniform_int_distribution<int> y_dist_{4, window::height / 8 - 3};
 			int xx = x_dist_(global_mt);
-			int yy = x_dist_(global_mt);
+			int yy = y_dist_(global_mt);
 
 			bool ok = true;
 			for (int i = 0; i < len; i++) {
@@ -260,11 +285,15 @@ public:
 			&& blocks_.at({x, y}).state_ != block::state::falling;
 	}
 
+	void clear() {
+		blocks_.clear();
+	}
+
 private:
 	gl::program &prog_;
 	particles &part_;
 	std::unordered_map<glm::ivec2, block> blocks_;
-	std::uniform_int_distribution<int> l_dist_{2, 8};
+	std::uniform_int_distribution<int> l_dist_{4, 8};
 	std::uniform_int_distribution<int> f_dist_{0, 23};
 };
 
@@ -308,6 +337,7 @@ struct entity {
 			yvel = -240;
 			jump_ctr--;
 			jump_frame_wait = 10;
+			Mix_PlayChannel(-1, jump_sound, 0);
 		}
 
 		constexpr double steps = 50;
@@ -366,6 +396,12 @@ struct entity {
 		this->x = x; this->y = y;
 	}
 
+	void reset_vel() {
+		xvel = 0;
+		yvel = 0;
+		xdir = 1;
+	}
+
 private:
 	double xspeed_;
 	int base_frame_;
@@ -373,7 +409,7 @@ private:
 	sprite spr_;
 	double x = 0, y = 0;
 	double xvel = 0, yvel = 0;
-	int xdir = 0;
+	int xdir = 1;
 	int jump_ctr = 2;
 	int jump_frame_wait = 0;
 };
@@ -394,64 +430,91 @@ struct player : entity {
 };
 
 struct enemy : entity {
-	enemy(player &player, blocks &blocks, gl::program &prog)
-	: entity{blocks, prog, 2, 80}, player_{player}, blocks_{blocks} { }
+	enemy(blocks &blocks, gl::program &prog)
+	: entity{blocks, prog, 2, 80}, blocks_{blocks} { }
 
 	enemy(const enemy &) = delete;
 	enemy(enemy &&) = default;
 
 	virtual ~enemy() = default;
 
-	movement get_current_movement(double, input_state &) override {
+	movement get_current_movement(double delta, input_state &) override {
 		if (dir == 1 && blocks_.check_collision(get_x() + 4, get_y(), 7, 7))
 			dir = -dir;
 
-		if (dir == 1 && !blocks_.check_collision(get_x() + 4, get_y() + 4, 7, 7))
+		if (dir == 1 && !blocks_.check_collision(get_x() + 4, get_y() + 4, 7, 7)) {
 			dir = -dir;
+			cooldown_ = 0.3;
+			wants_shoot_ = true;
+		}
 
 		if (dir == -1 && blocks_.check_collision(get_x() - 4, get_y(), 7, 7))
 			dir = -dir;
 
-		if (dir == -1 && !blocks_.check_collision(get_x() - 4, get_y() + 4, 7, 7))
+		if (dir == -1 && !blocks_.check_collision(get_x() - 4, get_y() + 4, 7, 7)) {
 			dir = -dir;
+			cooldown_ = 0.3;
+			wants_shoot_ = true;
+		}
 
 		bool left = dir == -1, right = dir == 1;
 		if (!blocks_.check_collision(get_x(), get_y() + 4, 7, 7))
-			left = right = false;
+			wants_shoot_ = left = right = false;
 
-		std::uniform_int_distribution<int> dist{0, 34};
+		if (cooldown_ > 0 && wants_shoot_)
+			cooldown_ -= delta;
+		else if (cooldown_ <= 0 && wants_shoot_) {
+			cooldown_ = 0;
+			do_shoot_ = true;
+			wants_shoot_ = false;
+		}
 
-		wants_shoot_ = dist(global_mt) == 2;
+		time_to_live_ -= delta;
 
 		return {left, right, false};
 	}
 
 	bool wants_shoot() {
-		return std::exchange(wants_shoot_, 0);
+		return std::exchange(do_shoot_, false);
 	}
 
 	int facing() const {
-		return dir;
+		return -dir;
+	}
+
+	bool explode() {
+		return time_to_live_ <= 0;
 	}
 
 private:
-	player &player_;
 	blocks &blocks_;
 	int dir = 1;
 	bool wants_shoot_ = false;
+	bool do_shoot_ = false;
+	double cooldown_ = 0;
+	double time_to_live_ = 6;
 };
 
 struct bullets {
 	bullets(blocks &blocks, gl::program &prog)
 	: blocks_{blocks}, spr_{prog, "res/bullet.png", 2, 2} { }
 
-	void tick(double delta) {
+	void tick(double delta, double px, double py) {
 		for (auto it = pos_.begin(); it != pos_.end();) {
 			auto &p = *it;
 			p.x += delta * p.z;
 
+			bool hit = false;
+
+			if (aabb(px, py, 7, 7, p.x, p.y, 1, 1)) {
+				hit = true;
+				player_hits_++;
+				Mix_PlayChannel(-1, hit_sound, 0);
+			}
+
 			if (p.x >= window::width || p.x <= -2
-					|| blocks_.check_collision(p.x, p.y, 1, 1))
+					|| blocks_.check_collision(p.x, p.y, 1, 1)
+					|| hit)
 				it = pos_.erase(it);
 			else
 				++it;
@@ -470,10 +533,19 @@ struct bullets {
 		}
 	}
 
+	int player_hits() {
+		return std::exchange(player_hits_, 0);
+	}
+
+	void clear() {
+		pos_.clear();
+	}
+
 private:
 	std::vector<glm::vec3> pos_;
 	blocks &blocks_;
 	sprite spr_;
+	int player_hits_ = 0;
 };
 
 std::string format_time(double time) {
@@ -497,20 +569,65 @@ std::string format_time(double time) {
 	return out;
 }
 
-struct scene {
-	scene() {
-		player_.set_position(window::width / 2 - 4, window::height / 4);
-		blocks_.add_platform_at((window::width / 8 - 8) / 2, 10, 8);
-	}
+void render_text_outlined_center(int y, text &t, std::string_view text) {
+	t.set_text(text);
+	t.x = (window::width - text.size() * 6) / 2 - 1;
+	t.y = y;
+	t.render({0, 0, 0, 1});
+	t.x = (window::width - text.size() * 6) / 2 + 1;
+	t.y = y;
+	t.render({0, 0, 0, 1});
+	t.x = (window::width - text.size() * 6) / 2;
+	t.y = y + 1;
+	t.render({0, 0, 0, 1});
+	t.x = (window::width - text.size() * 6) / 2;
+	t.y = y - 1;
+	t.render({0, 0, 0, 1});
+	t.x = (window::width - text.size() * 6) / 2;
+	t.y = y;
+	t.render({1, 1, 1, 1});
+}
 
+struct scene {
 	void tick(double delta, input_state &input) {
 		time_tracker_.tick(delta);
 		clouds_.tick();
 
-		std::uniform_int_distribution<int> g_dist{0, 80};
-		std::uniform_int_distribution<int> e_dist{0, 3};
+		switch (state_) {
+			case state::game:
+				game_tick(delta, input);
+				break;
+			case state::mainmenu:
+			case state::gameover:
+				gameover_tick(delta, input);
+				break;
+			case state::paused:
+				paused_tick(delta, input);
+				break;
+		}
+	}
 
-		if (g_dist(global_mt) == 2)
+	void reset_to_game() {
+		enemies_.clear();
+		blocks_.clear();
+		particles_.clear();
+		bullets_.clear();
+
+		player_.reset_vel();
+		player_.set_position(window::width / 2 - 4, window::height / 4);
+		blocks_.add_platform_at((window::width / 8 - 8) / 2, 10, 8);
+		health = 160;
+		spawn_cooldown = 0.5;
+
+		state_ = state::game;
+		start_at_ = time_tracker_.now();
+	}
+
+	void game_tick(double delta, input_state &input) {
+		std::uniform_int_distribution<int> g_dist{0, 99};
+		std::uniform_int_distribution<int> e_dist{0, 4};
+
+		if (spawn_cooldown <= 0 && g_dist(global_mt) == 0)
 			blocks_.add_platform(
 			[&] (int x, int y, int len) {
 				if (aabb(player_.get_x(), player_.get_y(), 7, 7,
@@ -522,15 +639,17 @@ struct scene {
 							x * 8, y * 8, len * 8, 8))
 						return false;
 
-				if (e_dist(global_mt) == 0) {
+				if (e_dist(global_mt) != 0) {
 					if (blocks_.check_collision(x * 8 + len * 4, (y - 1) * 8, 7, 7))
 						return false;
 
-					enemies_.emplace_back(std::make_unique<enemy>(player_, blocks_, prog_));
+					enemies_.emplace_back(std::make_unique<enemy>(blocks_, prog_));
 					enemies_.back()->set_position(x * 8 + len * 4, (y - 1) * 8);
 				}
 				return true;
 			});
+		else if (spawn_cooldown > 0)
+			spawn_cooldown -= delta;
 
 		blocks_.tick(delta);
 		particles_.tick(delta);
@@ -540,22 +659,72 @@ struct scene {
 			if (e.wants_shoot()) {
 				bullets_.add_bullet(e.get_x() + (e.facing() == 1 ? 8 : -3), e.get_y() + 2, e.facing() * 30);
 			}
-			if (e.get_y() >= window::height)
+
+			bool exploded = e.explode();
+
+			if (exploded) {
+				Mix_PlayChannel(-1, blockfall_sound, 0);
+				for (int i = 0; i < 4; i++)
+					particles_.add_particle(e.get_x() + 4, e.get_y() + 8);
+			}
+
+			if (e.get_y() >= window::height || exploded)
 				it = enemies_.erase(it);
 			else
 				++it;
 		}
 		player_.tick(delta, input);
-		bullets_.tick(delta);
+		bullets_.tick(delta, player_.get_x(), player_.get_y());
+
+		int hits = bullets_.player_hits();
+		health -= hits * 8;
+
+		if (player_.get_y() >= window::height)
+			health -= 2;
+
+		if (health < 0) {
+			state_ = state::gameover;
+			end_at_ = time_tracker_.now();
+			Mix_PlayChannel(-1, gameover_sound, 0);
+		}
+
+		if (input.just_pressed_keys.contains(SDLK_ESCAPE))
+			state_ = state::paused;
+	}
+
+	void gameover_tick(double, input_state &input) {
+		if (input.just_pressed_keys.size())
+			reset_to_game();
+	}
+
+	void paused_tick(double, input_state &input) {
+		if (input.just_pressed_keys.contains(SDLK_ESCAPE))
+			state_ = state::game;
 	}
 
 	void render() {
 		prog_.set_uniform("ortho", ortho);
 
 		clouds_.render();
-
 		bg_.render();
 
+		switch (state_) {
+			case state::mainmenu:
+				mainmenu_render();
+				break;
+			case state::game:
+				game_render();
+				break;
+			case state::gameover:
+				gameover_render();
+				break;
+			case state::paused:
+				paused_render();
+				break;
+		}
+	}
+
+	void game_render() {
 		blocks_.render();
 		player_.render();
 		for (auto &e : enemies_)
@@ -563,15 +732,49 @@ struct scene {
 		bullets_.render();
 		particles_.render();
 
-		text t{prog_, fnt_};
-
 		double elapsed = time_tracker_.now() - start_at_;
 		std::string text = "Time: " + format_time(elapsed);
 
-		t.x = (window::width - text.size() * 6) / 2;
-		t.y = 6;
-		t.set_text(text);
-		t.render({0, 0, 0, 1});
+		render_text_outlined_center(6, time_text_, text);
+
+		hp_.x = health - 160;
+		hp_.render();
+	}
+
+	void paused_render() {
+		blocks_.render();
+		player_.render();
+		for (auto &e : enemies_)
+			e->render();
+		bullets_.render();
+		particles_.render();
+
+		render_text_outlined_center(6, time_text_, "Paused");
+
+		hp_.x = health - 160;
+		hp_.render();
+	}
+
+	void gameover_render() {
+		blocks_.render();
+		for (auto &e : enemies_)
+			e->render();
+
+		double elapsed = end_at_ - start_at_;
+		std::string text = "Final Time: " + format_time(elapsed);
+
+		render_text_outlined_center(6, time_text_, "Game over");
+		render_text_outlined_center(18, time_text_, text);
+
+		render_text_outlined_center(80, time_text_, "Press any key");
+		render_text_outlined_center(92, time_text_, "to play again");
+	}
+
+	void mainmenu_render() {
+		render_text_outlined_center(22, time_text_, "Game Title Here");
+
+		render_text_outlined_center(80, time_text_, "Press any key");
+		render_text_outlined_center(92, time_text_, "to play");
 	}
 
 private:
@@ -591,12 +794,22 @@ private:
 
 	player player_{blocks_, prog_};
 	std::vector<std::unique_ptr<enemy>> enemies_;
+	text time_text_{prog_, fnt_};
 
 	bullets bullets_{blocks_, prog_};
 
 	sprite bg_{prog_, "res/bg.png", 160, 120};
+	sprite hp_{prog_, "res/healthbar.png", 512, 8};
+	int health = 160;
 
 	double start_at_ = 0;
+	double end_at_ = 0;
+
+	double spawn_cooldown = 0;
+
+	enum class state {
+		mainmenu, game, gameover, paused
+	} state_ = state::mainmenu;
 
 	glm::mat4 ortho = glm::ortho(0.f, static_cast<float>(window::width),
 			static_cast<float>(window::height), 0.f);
@@ -607,6 +820,19 @@ int main() {
 	global_mt = std::mt19937{dev()};
 
 	window wnd;
+
+	if (Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 512) < 0)
+		abort();
+
+	if (Mix_AllocateChannels(16) < 0)
+		abort();
+
+	jump_sound = Mix_LoadWAV("res/sound/jump.wav");
+	hit_sound = Mix_LoadWAV("res/sound/hit.wav");
+	blockfall_sound = Mix_LoadWAV("res/sound/block-fall.wav");
+	gameover_sound = Mix_LoadWAV("res/sound/gameover.wav");
+	pickup_sound = Mix_LoadWAV("res/sound/pickup.wav");
+	shoot_sound = Mix_LoadWAV("res/sound/shoot.wav");
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

@@ -21,6 +21,14 @@ resources = files(
 	'res/bg.png',
 	'res/particle.png',
 	'res/player.png',
+	'res/healthbar.png',
+
+	'res/sound/block-fall.wav',
+	'res/sound/gameover.wav',
+	'res/sound/hit.wav',
+	'res/sound/jump.wav',
+	'res/sound/pickup.wav',
+	'res/sound/shoot.wav',
 )
 
 deps = []
@@ -41,9 +49,14 @@ if host_machine.system() == 'emscripten'
 		compile_args : ['-s', 'USE_SDL_IMAGE=2'],
 		link_args : ['-s', 'USE_SDL_IMAGE=2']
 	)
+	deps += declare_dependency(
+		compile_args : ['-s', 'USE_SDL_MIXER=2'],
+		link_args : ['-s', 'USE_SDL_MIXER=2']
+	)
 else
 	deps += dependency('SDL2')
 	deps += dependency('SDL2_image')
+	deps += dependency('SDL2_mixer')
 endif
 
 exe = executable('ld49',

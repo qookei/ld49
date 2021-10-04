@@ -72,6 +72,19 @@ struct buffer {
 		glBufferData(Type, size_, data, usage);
 	}
 
+	void upload(const void *data, size_t size, GLenum usage) {
+		assert(data);
+
+		bind();
+		if (size > size_) {
+			usage_ = usage;
+			size_ = size;
+			glBufferData(Type, size_, data, usage_);
+		} else {
+			glBufferSubData(Type, 0, size_, data);
+		}
+	}
+
 	size_t size() const {
 		return size_;
 	}
